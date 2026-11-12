@@ -1,0 +1,31 @@
+{
+  "cliente": "Famiglia Bianchi",
+  "capitale": 400000,
+  "rendimenti": "../data/rendimenti_esempio.csv",
+  "benchmark": {
+    "Azioni globali": 0.30, "Titoli di Stato euro": 0.35, "Obbligazioni societarie": 0.15,
+    "Inflazione euro": 0.05, "Oro": 0.05, "Liquidità": 0.10
+  },
+  "liquidita": "Liquidità",
+  "caratteristiche": ["Azioni globali", "Titoli di Stato euro", "Obbligazioni societarie"],
+  "regimi": 3,
+  "inizio_test": "2007-01",
+  "rifai_ogni": 12,
+  "banda": 0.10,
+  "bande": {"Inflazione euro": 0.05, "Oro": 0.05},
+  "avversione": 6,
+  "costo": 0.0010,
+  "orizzonte_costi": 3,
+  "restringimento": 0.5,
+  "soglia_crisi": 0.5,
+  "rischiosi": ["Azioni globali", "Obbligazioni societarie"],
+  "rifugi": ["Titoli di Stato euro", "Liquidità"],
+  "episodi": [
+    {"nome": "Crisi finanziaria 2008", "inizio": "2007-11", "fine": "2009-03"},
+    {"nome": "Debito sovrano 2011", "inizio": "2011-07", "fine": "2012-05"},
+    {"nome": "Pandemia 2020", "inizio": "2020-02", "fine": "2020-04"},
+    {"nome": "Inflazione 2022", "inizio": "2021-12", "fine": "2022-10"}
+  ],
+  "confronto_regimi": false,
+  "bootstrap": 1000
+}

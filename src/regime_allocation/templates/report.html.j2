@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Allocazione per regimi – {{ cliente }}</title>
+{% if plotly_inline %}<script>{{ plotly_inline | safe }}</script>{% else %}<script src="{{ plotly_cdn }}"></script>{% endif %}
+<style>
+  :root { --blu: #1f4e79; --grigio: #595959; --chiaro: #f2f5f9; }
+  body { font-family: "Segoe UI", Helvetica, Arial, sans-serif; color: #222; max-width: 1000px;
+         margin: 0 auto; padding: 32px 16px 60px; line-height: 1.5; background: #fff; }
+  header { border-bottom: 3px solid var(--blu); padding-bottom: 12px; margin-bottom: 24px; }
+  h1 { color: var(--blu); margin: 0 0 4px; font-size: 1.7rem; }
+  h2 { color: var(--blu); font-size: 1.2rem; margin-top: 38px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1rem; margin: 22px 0 6px; }
+  .sub { color: var(--grigio); font-size: .92rem; }
+  .kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 16px 0; }
+  .kpi div { background: var(--chiaro); border-radius: 8px; padding: 12px 14px; }
+  .kpi b { display: block; font-size: 1.35rem; color: var(--blu); }
+  .kpi span { font-size: .78rem; color: var(--grigio); text-transform: uppercase; letter-spacing: .03em; }
+  .kpi small { display: block; font-size: .8rem; color: var(--grigio); }
+  .esito { border-left: 5px solid #fab219; background: #fff8e8; padding: 12px 16px; border-radius: 4px; margin: 16px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; margin: 10px 0; }
+  th, td { padding: 7px 10px; text-align: right; border-bottom: 1px solid #e5e5e5; }
+  th:first-child, td:first-child { text-align: left; }
+  th { background: var(--blu); color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  tr.evidenza td { font-weight: 600; background: #eaf1fa; }
+  tr.ingenuo td { color: var(--grigio); font-style: italic; }
+  td.neg { color: #c0392b; } td.pos { color: #1e7d32; }
+  td small { color: var(--grigio); display: block; font-size: .78rem; }
+  .pallino { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+  .scroll { overflow-x: auto; }
+  .scroll table { white-space: nowrap; }
+  .grafico { margin: 14px 0; overflow: hidden; }
+  .note { font-size: .8rem; color: var(--grigio); background: var(--chiaro); padding: 12px 14px; border-radius: 6px; }
+  ul { padding-left: 20px; }
+  @media print { .grafico { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Allocazione tattica per regimi di mercato</h1>
+  <div class="sub">Preparato per <b>{{ cliente }}</b> · capitale {{ capitale }} · dati {{ frequenza }} dal {{ dati_dal }} al {{ dati_al }} · report del {{ oggi }}</div>
+</header>
+
+<h2>Sintesi</h2>
+<div class="kpi">
+  {% for label, value, n in kpi %}<div><span>{{ label }}</span><b>{{ value }}</b><small>{{ n }}</small></div>{% endfor %}
+</div>
+<div class="esito">Il modello riconosce oggi un regime di <b>{{ dominante }}</b>. Nel backtest fuori campione
+({{ test0 }}–{{ test1 }}, {{ mesi_test }} mesi) l'allocazione per regimi ha reso {{ pct(rr["Rendimento annuo"], 1) }}
+all'anno contro {{ pct(rb["Rendimento annuo"], 1) }} del benchmark statico, con un indice di Sharpe di
+{{ num(rr.Sharpe, 2) }} contro {{ num(rb.Sharpe, 2) }} e una perdita massima di {{ pct(rr["Massimo drawdown"], 1) }}
+contro {{ pct(rb["Massimo drawdown"], 1) }}.{% if ep_peggio %} Nelle crisi improvvise arriva tardi: ha fatto peggio
+del benchmark in {{ ep_peggio | join(", ") }}.{% endif %}
+{% if quota_ingenuo %}Un backtest che usa il senno di poi avrebbe promesso {{ pct(t.loc[INGENUO, "Extra-rendimento"], 2, True) }}
+all'anno: il {{ quota_ingenuo }} di quel guadagno non è replicabile.{% endif %}</div>
+
+<h2>Che cosa sono i regimi</h2>
+<p>I mercati non si comportano sempre allo stesso modo: si alternano fasi in cui le azioni salgono con poca
+volatilità, fasi di crisi in cui scendono bruscamente e i titoli di Stato fanno da rifugio, fasi in cui l'inflazione
+fa salire i tassi e azioni e obbligazioni perdono insieme. Un <b>Hidden Markov Model</b> tratta il regime come una
+variabile nascosta: non lo si osserva, ma lo si deduce dai rendimenti di {{ caratteristiche | join(", ") }}. Ogni
+regime ha i suoi rendimenti medi, le sue volatilità e le sue correlazioni, e passa agli altri con probabilità costanti
+nel tempo. Il numero di regimi ({{ k }}) e i loro nomi non sono imposti: il modello stima le caratteristiche, i nomi
+vengono assegnati dopo in base alla volatilità azionaria e al comportamento dei titoli di Stato.</p>
+<div class="grafico">{{ grafici.regimi | safe }}</div>
+<p class="sub">Ogni settimana il regime è quello più probabile secondo il <b>filtro</b> dell'HMM, cioè usando solo i
+rendimenti fino a quel giorno e un modello stimato al più tardi a fine mese precedente.{% if regime_vero %} La
+striscia in basso mostra i regimi veri della simulazione, che il modello non conosce.{% endif %}</p>
+
+<h3>Le caratteristiche dei regimi</h3>
+<div class="grafico">{{ grafici.caratteristiche | safe }}</div>
+<div class="scroll">
+<table>
+  <tr><th>Regime</th>{% for x in attivi %}<th style="white-space:normal">{{ x }}</th>{% endfor %}<th>Correlazione azioni-Stato</th><th>Durata media</th><th>Quota del tempo</th></tr>
+  {% for r in regimi %}<tr><td><span class="pallino" style="background:{{ r.colore }}"></span>{{ r.nome }}</td>{% for v in r.rend %}<td class="{{ r.segni[loop.index0] }}">{{ v }}<small>vol {{ r.vol[loop.index0] }}</small></td>{% endfor %}<td>{{ r.corr }}</td><td>{{ r.durata }} mesi</td><td>{{ r.quota }}</td></tr>{% endfor %}
+</table>
+</div>
+<p class="sub">Rendimenti in eccesso sulla liquidità e volatilità annui, stimati pesando ogni settimana con la
+probabilità (lisciata) di appartenere al regime. Durata media 1/(1 − probabilità di restare), quota del tempo dalla
+distribuzione di lungo periodo della catena.</p>
+<p>La differenza più importante tra i regimi non è nei rendimenti ma nelle <b>correlazioni</b>: nelle crisi i titoli
+di Stato proteggono (correlazione negativa con le azioni), quando salgono i tassi cadono insieme alle azioni e la
+diversificazione tradizionale smette di funzionare.</p>
+<div class="scroll">
+<table>
+  <tr><th>Probabilità di passare in un mese da… a…</th>{% for n in nomi %}<th>{{ n }}</th>{% endfor %}</tr>
+  {% for r in transizioni %}<tr><td>{{ r.da }}</td>{% for v in r.valori %}<td>{{ v }}</td>{% endfor %}</tr>{% endfor %}
+</table>
+</div>
+
+<h3>Quanti regimi?</h3>
+<p>Più regimi descrivono meglio i dati ma costano parametri e rischiano di inseguire il rumore. Il criterio
+bayesiano (BIC) indica <b>{{ sel_bic }} regimi</b>, quello di Akaike (AIC), meno severo, {{ sel_aic }}.</p>
+<div class="grafico">{{ grafici.selezione | safe }}</div>
+
+{% if ric %}
+<h3>Quanto bene li riconosce</h3>
+<p>Con dati simulati si conoscono i regimi veri e si può misurare il modello. Fuori campione, settimana per settimana,
+il regime più probabile è quello giusto nel <b>{{ ric.accuratezza }}</b> dei casi su {{ ric.settimane }} settimane.
+In media il modello impiega <b>{{ ric.ritardo_medio }} settimane</b> ad accorgersi di un cambio di regime. I falsi
+allarmi, settimane di espansione scambiate per altro, sono {% for n, v in ric.falsi.items() %}{{ v }} per «{{ n }}»{% if not loop.last %} e {% endif %}{% endfor %}.</p>
+<div class="scroll">
+<table>
+  <tr><th>Episodio</th><th>Inizio</th><th>Fine</th><th>Settimane</th><th>Riconosciuto dopo (settimane)</th><th>Settimane riconosciute</th></tr>
+  {% for e in ric.episodi %}<tr><td><span class="pallino" style="background:{{ e.colore }}"></span>{{ e.regime }}</td><td>{{ e.inizio }}</td><td>{{ e.fine }}</td><td>{{ e.settimane }}</td><td>{{ e.ritardo }}</td><td>{{ e.quota }}</td></tr>{% endfor %}
+</table>
+</div>
+{% endif %}
+<div class="grafico">{{ grafici.probabilita | safe }}</div>
+
+<h2>Dal regime al portafoglio</h2>
+<p>Il benchmark strategico del profilo è {% for n, v in bench_comp %}{{ n }} {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}.
+A ogni fine mese il modello stima la quota del mese successivo che passerà in ciascun regime, combina i rendimenti
+attesi e le covarianze dei regimi con quelle probabilità e sceglie il portafoglio <b>media-varianza</b> (avversione al
+rischio {{ avversione }}) entro <b>±{{ banda }}</b> dal benchmark{% if bande %} ({% for n, v in bande %}±{{ v }} per {{ n }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}.
+Dei regimi si usa solo lo <b>scarto dalla media storica</b>, ridotto del {{ restringimento }} perché le stime su pochi
+mesi di crisi sono molto incerte, e lo si somma ai <b>rendimenti di equilibrio</b> impliciti nel benchmark (quelli per
+cui il benchmark sarebbe ottimo): con le probabilità di lungo periodo il portafoglio ottimo coincide con il benchmark,
+e se ne allontana solo quando un regime è più o meno probabile del solito. I costi di transazione ({{ costo }} punti
+base per ogni euro scambiato) entrano nell'ottimizzazione, ammortizzati su {{ orizzonte }} mesi.</p>
+<p>Il confronto è con quattro alternative: il <b>benchmark statico</b> ribilanciato ogni mese, la stessa
+ottimizzazione <b>senza regimi</b> (rendimenti e covarianze di tutto il passato), una <b>regola risk-off</b> semplice
+(se la probabilità di crisi supera il {{ soglia }}, {{ rischiosi | join(" e ") }} scendono al minimo e il ricavato va
+a {{ rifugi | join(" e ") }}) e il <b>backtest ingenuo</b>, che stima il modello una volta sola su tutti i dati e per
+ogni mese usa le probabilità lisciate di quello stesso mese: è l'errore più comune nei backtest sui regimi, perché il
+modello sa già in che regime sarà il mese in cui investe.</p>
+
+<h2>Backtest fuori campione</h2>
+<p>Ogni decisione usa solo i dati disponibili in quel momento: il modello viene ristimato ogni {{ rifai }} mesi su
+tutta la storia fino a quella data, le probabilità si aggiornano ogni settimana, il portafoglio si ribilancia a fine
+mese pagando i costi.</p>
+<div class="grafico">{{ grafici.crescita | safe }}</div>
+<div class="scroll">
+<table>
+  <tr><th>Strategia</th>{% for c in colonne %}<th style="white-space:normal">{{ c }}</th>{% endfor %}</tr>
+  {% for s in strategie %}<tr class="{% if s.evidenza %}evidenza{% elif s.ingenuo %}ingenuo{% endif %}"><td>{{ s.nome }}</td>{% for v in s.valori %}<td>{{ v }}</td>{% endfor %}</tr>{% endfor %}
+</table>
+</div>
+<p class="sub">Rendimenti mensili al netto dei costi. Sharpe sul rendimento in eccesso sulla liquidità; CVaR: media
+del 5% dei mesi peggiori; rotazione: somma annua dei valori assoluti delle operazioni. L'allocazione per regimi ruota
+il {{ rot_regimi }} del portafoglio all'anno, con costi di {{ costi_regimi }}.</p>
+<div class="grafico">{{ grafici.drawdown | safe }}</div>
+<div class="grafico">{{ grafici.pesi | safe }}</div>
+
+<h3>Le crisi una per una</h3>
+<p>Il valore di un'allocazione per regimi si gioca negli episodi. Una crisi che dura mesi lascia al modello il tempo di
+riconoscerla e di ridurre il rischio; una crisi improvvisa colpisce prima che i pesi cambino, perché il modello ha
+bisogno di qualche settimana di dati e il portafoglio si ribilancia solo a fine mese. Quando salgono i tassi il
+problema è diverso: azioni e obbligazioni scendono insieme e c'è poco dove rifugiarsi. Negli episodi analizzati
+l'allocazione per regimi ha fatto meglio del benchmark in {{ ep_meglio | length }} casi su {{ n_episodi }}{% if ep_peggio %},
+peggio in {{ ep_peggio | join(", ") }}{% endif %}.</p>
+<div class="grafico">{{ grafici.episodi | safe }}</div>
+<div class="scroll">
+<table>
+  <tr><th>Episodio</th>{% for s in nomi_strategie %}<th style="white-space:normal">{{ s }}</th>{% endfor %}</tr>
+  {% for e in episodi %}<tr><td>{{ e.nome }}</td>{% for v in e.valori %}<td class="{{ e.segni[loop.index0] }}">{{ v }}</td>{% endfor %}</tr>{% endfor %}
+</table>
+</div>
+<h3>Rendimento annualizzato per regime</h3>
+<div class="scroll">
+<table>
+  <tr><th>Regime {% if regime_vero %}vero{% else %}riconosciuto{% endif %}</th><th>Mesi</th>{% for s in nomi_strategie %}<th style="white-space:normal">{{ s }}</th>{% endfor %}</tr>
+  {% for r in per_regime %}<tr><td>{{ r.nome }}</td><td>{{ r.mesi }}</td>{% for v in r.valori %}<td class="{{ r.segni[loop.index0] }}">{{ v }}</td>{% endfor %}</tr>{% endfor %}
+</table>
+</div>
+<p class="sub">L'allocazione per regimi fa meglio del benchmark {% if regimi_guadagno %}nei regimi di {{ regimi_guadagno | join(", ") }}{% else %}in nessun regime{% endif %}:
+riduce il rischio quando il regime è sfavorevole e lo aumenta, entro le bande, quando è favorevole. Il prezzo sono i
+ritardi, i falsi allarmi e la rotazione del portafoglio.</p>
+
+<h2>Fortuna o capacità?</h2>
+<p>Un backtest è una sola storia. Il <b>bootstrap stazionario</b> (Politis e Romano) ricampiona {{ n_boot }} volte i
+mesi a blocchi di lunghezza casuale, così conserva la persistenza delle crisi, e ricalcola la differenza tra
+l'allocazione per regimi e il benchmark. L'extra-rendimento è positivo nel <b>{{ boot_p_extra }}</b> dei campioni
+(intervallo al 90%: da {{ boot_ci_extra[0] }} a {{ boot_ci_extra[1] }}), la differenza di Sharpe nel
+<b>{{ boot_p_sharpe }}</b> (da {{ boot_ci_sharpe[0] }} a {{ boot_ci_sharpe[1] }}). Il bootstrap misura il rischio che il risultato sia
+dovuto ai mesi capitati nel campione, non quello che il modello sia sbagliato: se i regimi del futuro saranno diversi da
+quelli del passato, nessun ricampionamento lo può dire.</p>
+<div class="grafico">{{ grafici.bootstrap | safe }}</div>
+
+<h3>Robustezza</h3>
+<p>Con la banda di ±{{ banda }} e costi di {{ costo }} punti base l'extra-rendimento è {{ rob_base }}. Più libertà
+tattica rende di più finché i costi sono bassi, ma la strategia ruota molto il portafoglio:
+{% if soglia_costi %}con costi da {{ soglia_costi }} punti base in su il vantaggio sparisce{% else %}con costi di
+{{ rob_costo_max }} punti base l'extra-rendimento scende a {{ rob_extra_max }}{% endif %}. Ha senso solo con strumenti a
+basso costo, come ETF e future.</p>
+<div class="grafico">{{ grafici.robustezza | safe }}</div>
+{% if conf_k %}
+<div class="scroll">
+<table>
+  <tr><th>Regimi nel modello</th><th>Rendimento annuo</th><th>Volatilità</th><th>Sharpe</th><th>Massimo drawdown</th><th>Extra-rendimento</th><th>Rotazione annua</th></tr>
+  {% for r in conf_k %}<tr{% if r.k == k %} class="evidenza"{% endif %}><td>{{ r.k }}</td><td>{{ r.rend }}</td><td>{{ r.vol }}</td><td>{{ r.sharpe }}</td><td>{{ r.dd }}</td><td>{{ r.extra }}</td><td>{{ r.rot }}</td></tr>{% endfor %}
+</table>
+</div>
+<p class="sub">Lo stesso backtest fuori campione con due, tre e quattro regimi.</p>
+{% endif %}
+
+<h2>La proposta per il prossimo mese</h2>
+<p>Con i dati fino al {{ dati_al }} il modello, stimato su tutta la storia, assegna al regime attuale queste
+probabilità: {% for n, v in p_oggi %}{{ n }} {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}. Per il prossimo
+mese si attendono {% for n, v in p_mese %}{{ n }} {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+<div class="grafico">{{ grafici.proposta | safe }}</div>
+<div class="scroll">
+<table>
+  <tr><th>Attività</th><th>Benchmark</th><th>Proposta</th><th>Differenza</th><th>Importo</th><th>Operazione</th><th>Regola risk-off</th></tr>
+  {% for r in proposta %}<tr><td>{{ r.attivo }}</td><td>{{ r.bench }}</td><td>{{ r.prop }}</td><td class="{{ r.segno }}">{{ r.diff }}</td><td>{{ r.importo }}</td><td class="{{ r.segno }}">{{ r.op }}</td><td>{{ r.riskoff }}</td></tr>{% endfor %}
+</table>
+</div>
+<p class="sub">Operazioni rispetto a un portafoglio oggi allineato al benchmark, su un capitale di {{ capitale }}.</p>
+
+<h2>Metodologia</h2>
+<ul class="sub">
+  <li><b>Hidden Markov Model</b> gaussiano con covarianze piene sui rendimenti in eccesso standardizzati, stimato con
+    l'algoritmo EM di Baum-Welch (ricorsioni scalate, Rabiner 1989) da più punti di partenza k-means++; nel
+    walk-forward la stima riparte anche da quella precedente.</li>
+  <li><b>Probabilità</b>: filtrate P(regime oggi | dati fino a oggi) per le decisioni; lisciate P(regime | tutti i dati)
+    solo per stimare i momenti dentro la finestra di stima e per il backtest ingenuo. Previsione del mese successivo
+    come media delle previsioni a 1…h periodi con la matrice di transizione (h = 4 con dati settimanali).</li>
+  <li><b>Momenti per regime</b>: medie e covarianze pesate con le probabilità lisciate della finestra di stima;
+    momenti della mistura μ = Σ pₖμₖ, Σ = Σ pₖ(Σₖ + μₖμₖᵀ) − μμᵀ.</li>
+  <li><b>Ottimizzazione</b>: massimo di μᵀw − (λ/2)wᵀΣw − costi, pesi tra benchmark ± banda, acquisti e vendite come
+    variabili esplicite (problema convesso risolto con SLSQP).</li>
+  <li><b>Selezione</b> del numero di regimi con BIC e AIC; <b>significatività</b> con il bootstrap stazionario a
+    blocchi di lunghezza media 6 mesi.</li>
+</ul>
+{% if nota %}<p class="note">{{ nota }}</p>{% endif %}
+<p class="note">Documento a scopo illustrativo: le stime si basano su dati passati e su modelli, non costituiscono una
+previsione né una raccomandazione personalizzata. I rendimenti passati, simulati o storici, non sono indicativi di
+quelli futuri. Il report non considera imposte né la verifica di adeguatezza prevista dalla MiFID II.</p>
+</body>
+</html>
